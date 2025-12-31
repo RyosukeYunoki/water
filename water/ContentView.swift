@@ -1,6 +1,7 @@
 import SwiftUI
 import UserNotifications
 import GoogleMobileAds
+import StoreKit // ★追加: レビュー機能用
 
 // MARK: - Data Management
 
@@ -597,9 +598,14 @@ final class WaterStore: ObservableObject {
     @Published var todayIntake: Int = 0
     @Published var showingGoalAchieved = false
     @Published var hasShownGoalToday = false
+    
+    // ★追加: レビュー表示のトリガー用フラグ
+    @Published var shouldRequestReview = false
 
     private let key = "waterHistory_v1"
     private let achievementKey = "achievement_shown_"
+    // ★追加: 初回記録済みかどうかの保存キー
+    private let hasRecordedFirstTimeKey = "has_recorded_first_time_v1"
 
     init() {
         load()
@@ -623,6 +629,23 @@ final class WaterStore: ObservableObject {
         save()
         
         checkGoalAchievement(newIntake: current)
+        
+        // ★追加: 初回記録チェックを実行
+        checkFirstRecordingForReview()
+    }
+    
+    // ★追加: 初めての記録ならレビューフラグを立てるメソッド
+    private func checkFirstRecordingForReview() {
+        // まだ初回記録フラグが保存されていない（＝初めて）場合
+        if !UserDefaults.standard.bool(forKey: hasRecordedFirstTimeKey) {
+            // フラグを保存（次回以降は呼ばれないようにする）
+            UserDefaults.standard.set(true, forKey: hasRecordedFirstTimeKey)
+            
+            // UIの更新やアニメーションと被らないように少しだけ遅らせて通知
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.shouldRequestReview = true
+            }
+        }
     }
 
     func setToday(_ value: Int) {
@@ -794,6 +817,9 @@ struct ContentView: View {
     @ObservedObject var goalManager = GoalManager.shared
     @State private var showingIntro = false
     @State private var showingResetAlert = false
+    
+    // ★追加: レビューリクエスト用のアクション
+    @Environment(\.requestReview) var requestReview
 
     var body: some View {
         NavigationView {
@@ -882,6 +908,7 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 20)
                         
+                        // 👇 BannerAdView の確認
                         BannerAdView()
                             .frame(width: 320, height: 50)
                             .padding(.bottom, 8)
@@ -916,6 +943,13 @@ struct ContentView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        // ★追加: WaterStoreのフラグを監視してレビューを表示
+        .onChange(of: store.shouldRequestReview) { shouldRequest in
+            if shouldRequest {
+                requestReview()
+                store.shouldRequestReview = false
+            }
+        }
     }
 }
 
@@ -1117,6 +1151,8 @@ struct GoalSettingsView: View {
                     .shadow(color: Color.accentRose.opacity(0.4), radius: 12, x: 0, y: 6)
                 }
                 .padding(.horizontal, 20)
+                
+                // 👇 BannerAdView の確認
                 BannerAdView()
                     .frame(width: 320, height: 50)
                     .padding(.bottom, 8)
@@ -1330,6 +1366,7 @@ struct StableNotificationSettingsView: View {
                         .padding(.horizontal, 20)
                     }
                     
+                    // 👇 BannerAdView の確認
                     BannerAdView()
                         .frame(width: 320, height: 50)
                         .padding(.bottom, 8)
@@ -1652,12 +1689,13 @@ struct CustomWaterInputView: View {
                         .shadow(color: Color.shadowGray.opacity(0.2), radius: 10, x: 0, y: 5)
                         
                         Spacer()
+                        
+                        // 👇 BannerAdView の確認
+                        BannerAdView()
+                            .frame(width: 320, height: 50)
+                            .padding(.bottom, 8)
                     }
                     .padding(20)
-                    // 👇 広告バナーを画面下部に配置
-                               BannerAdView()
-                                   .frame(width: 320, height: 50)
-                                   .padding(.bottom, 8)
                 }
                 
                 if showingConfirmation {
@@ -1694,14 +1732,6 @@ struct CustomWaterInputView: View {
         }
     }
 }
-
-// MARK: - ContentViewでの使用方法
-/*
-ContentViewのクイック追加部分を以下に置き換え:
-
-EnhancedQuickAddSection()
-    .padding(.horizontal, 20)
-*/
 
 struct HistoryView: View {
     @ObservedObject var store = WaterStore.shared
